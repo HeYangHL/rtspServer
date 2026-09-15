@@ -121,12 +121,12 @@ void SOCK_T::thread_proc(void)
         FD_SET(tcp_fd, &efd);
         struct timeval timeout = {0L, 1000L};
 
-        rtsp_s.creat_media_pthread();
         ret = select(tcp_fd+1, &rfd, NULL, &efd, &timeout);
         if(ret > 0)
         {
             if(FD_ISSET(tcp_fd, &rfd) != 0)
             {
+                // rtsp_s.creat_media_pthread();
                 struct sockaddr_in remote_fin;
                 socklen_t sock_size = sizeof(struct sockaddr_in);
                 c_fd = accept(tcp_fd, (struct sockaddr *)&remote_fin, &sock_size);
@@ -139,9 +139,11 @@ void SOCK_T::thread_proc(void)
                     #if 1
                     if(!rtsp_s.LockFlag)
                     {
+
                         rtsp_s.source_mutex.mutex_lock();
  //                       rtsp_s.source_mutex.mutex_cond_signal();
                         rtsp_s.source_mutex.mutex_cond_broadcast();
+
                         rtsp_s.source_mutex.mutex_unlock();
                         rtsp_s.LockFlag = true;
                     }

@@ -1,3 +1,8 @@
-/home/yanghe/teddy/project_app/rtsp/rtsp_s_API/build/CMakeFiles/rtsp_s.dir
-/home/yanghe/teddy/project_app/rtsp/rtsp_s_API/build/CMakeFiles/edit_cache.dir
-/home/yanghe/teddy/project_app/rtsp/rtsp_s_API/build/CMakeFiles/rebuild_cache.dir
+/mnt/hgfs/share/rtspServer/build/CMakeFiles/install/strip.dir
+/mnt/hgfs/share/rtspServer/build/CMakeFiles/install/local.dir
+/mnt/hgfs/share/rtspServer/build/CMakeFiles/edit_cache.dir
+/mnt/hgfs/share/rtspServer/build/CMakeFiles/install.dir
+/mnt/hgfs/share/rtspServer/build/CMakeFiles/list_install_components.dir
+/mnt/hgfs/share/rtspServer/build/CMakeFiles/rebuild_cache.dir
+/mnt/hgfs/share/rtspServer/build/CMakeFiles/rtsp_s.dir
+/mnt/hgfs/share/rtspServer/build/CMakeFiles/rtsp.dir

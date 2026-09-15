@@ -6,20 +6,68 @@ set(CMAKE_CXX_FLAGS "$ENV{CXXFLAGS} -g -w -std=c++11 -Wall")
 set(CMAKE_SYSTEM_PROCESSOR "arm")
 #set(CMAKE_CXX_FLAGS "-g -w -std=c++11")
 
+# 设置默认模式
+set(DEFAULT_SYNC_MODE "AV_SYNC_AUDIO_MASTER")
+
+# 允许用户在编译时通过 -DSYNC_MODE=xxx 覆盖默认值
+if(NOT DEFINED SYNC_MODE)
+    set(SYNC_MODE ${DEFAULT_SYNC_MODE})
+endif()
+
+# 根据模式设置相应的编译宏
+if(SYNC_MODE STREQUAL "AV_SYNC_AUDIO_MASTER")
+    add_definitions(-DAV_SYNC_AUDIO_MASTER)
+elseif(SYNC_MODE STREQUAL "AV_SYNC_VIDEO_MASTER")
+    add_definitions(-DAV_SYNC_VIDEO_MASTER)
+elseif(SYNC_MODE STREQUAL "AV_SYNC_EXTERNAL_CLOCK")
+    add_definitions(-DAV_SYNC_EXTERNAL_CLOCK)
+else()
+    message(FATAL_ERROR "Unknown sync mode: ${SYNC_MODE}")
+endif()
+
 #set(PWDIR /home/yanghe/teddy/project_app/rtsp_s/)
 set(PWDIR ${CMAKE_CURRENT_SOURCE_DIR})
-SET(TOOLSCHAIN_PATH /opt/hisi-linux/x86-arm/aarch64-himix200-linux)
-SET(CMAKE_C_COMPILER ${TOOLSCHAIN_PATH}/bin/aarch64-himix200-linux-gcc)
-SET(CMAKE_CXX_COMPILER ${TOOLSCHAIN_PATH}/bin/aarch64-himix200-linux-g++)
+SET(TOOLSCHAIN_PATH /opt/linux/x86-arm/aarch64-mix210-linux)
+SET(CMAKE_C_COMPILER ${TOOLSCHAIN_PATH}/bin/aarch64-mix210-linux-gcc)
+SET(CMAKE_CXX_COMPILER ${TOOLSCHAIN_PATH}/bin/aarch64-mix210-linux-g++)
+
+set(CMAKE_BUILD_TYPE Debug)
 
 include_directories(
 ${PWDIR}
 ${PWDIR}/en_de_ts
+${PWDIR}/fifo
+${PWDIR}/time_base
 )
 
 aux_source_directory(${PWDIR} SRC_LIST)
 aux_source_directory(${PWDIR}/en_de_ts TS_CRC_LIST)
+file(GLOB SRC_PART
+    ${PWDIR}/fifo/*.cpp
+    ${PWDIR}/time_base/*.cpp
+)
 
-add_executable(rtsp_s ${SRC_LIST} ${TS_CRC_LIST})
+set(LIB_LIST ${SRC_LIST})
+list(REMOVE_ITEM LIB_LIST "${PWDIR}/main.cpp")
+
+add_library(rtsp SHARED ${LIB_LIST} ${TS_CRC_LIST} ${SRC_PART})
+
+add_executable(rtsp_s ${SRC_LIST} ${TS_CRC_LIST} ${SRC_PART})
+
+install(TARGETS rtsp rtsp_s
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+)
+
+file(GLOB INC
+${PWDIR}/*.hpp
+${PWDIR}/*.h
+${PWDIR}/en_de_ts/*.hpp	
+${PWDIR}/en_de_ts/*.h
+${PWDIR}/time_base/*.hpp
+${PWDIR}/fifo/*.hpp
+)
+install(FILES ${INC} DESTINATION include)
 
 target_link_libraries(rtsp_s pthread)

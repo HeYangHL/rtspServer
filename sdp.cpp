@@ -12,7 +12,6 @@
 
 int SDP_M::init_sdp(const char *content, int cli_fd)
 {
-	RTSP_S rtsp_s;
 	char video_media[1024] = {0};
 	char audio_media[1024] = {0};
 	int flag = 0;
@@ -26,7 +25,7 @@ int SDP_M::init_sdp(const char *content, int cli_fd)
 
 	std::map<std::string, SOURCE>::iterator source_map;
 
-	for(source_map = rtsp_s.rtsp_session.begin(); source_map != rtsp_s.rtsp_session.end(); source_map++)
+	for(source_map = manager.rtsp_source.begin(); source_map != manager.rtsp_source.end(); source_map++)
 	{
 		if(source_map->first == content)
 		{

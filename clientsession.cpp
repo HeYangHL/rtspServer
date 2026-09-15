@@ -10,7 +10,7 @@ bool RTSP_SESSION::_play = false;
  *返回值：
  *   成功 0 失败 -1
  */
-
+#if 0
 int RTSP_SESSION::clear_source(int fd)
 {
     RTSP_S rtsp_s;
@@ -74,11 +74,140 @@ int RTSP_SESSION::clear_source(int fd)
 
     return 0;
 }
+#endif
+int RTSP_SESSION::clear_source(int fd)
+{
+    RTSP_S rtsp_s;
+
+    std::list<CLI_MSG>::iterator client_msg_list;
+    std::list<CLI_MSG>::iterator client_is_empty;
+    std::map<std::string, SOURCE>::iterator source_msg;
+
+    for (client_msg_list = rtsp_s._f_list.begin(); client_msg_list != rtsp_s._f_list.end(); client_msg_list++)
+    {
+        //         printf("client num = %d, iter fd = %d, fd = %d\n", rtsp_s._f_list.size(), iter->cli_tcp_fd, fd);
+        if (client_msg_list->cli_tcp_fd == fd)
+        {
+
+            // 给所有的资源加锁
+            printf("Clean up the client thread!\n");
+            if (IsRunning())
+            {
+                set_Destroy(true);
+                set_Run(false);
+                // pthread_cancel(client_msg_list->session_pid);
+                void *thread_return;
+                printf("[DEBUG]======> stop session pthread!\n");
+                pthread_join(client_msg_list->session_pid, &thread_return);
+                int *result = (int *)thread_return;
+                printf("线程返回: %d\n", *result);
+            }
+
+            std::string source_name = client_msg_list->session_map->get_source_name();
+            printf("delete client source !\n");
+            close(fd);
+            if (client_msg_list->session_map != NULL)
+            {
+                delete client_msg_list->session_map;
+                client_msg_list->session_map = NULL;
+            }
+            printf("erase client source !\n");
+            rtsp_s._f_list.erase(client_msg_list);
+
+            if (!rtsp_s._f_list.empty())
+            {
+                printf("Number of remaining clients : %d!\n", rtsp_s._f_list.size());
+                rtsp_s.source_mutex.mutex_lock();
+                for (source_msg = manager.rtsp_source.begin(); source_msg != manager.rtsp_source.end(); source_msg++)
+                {
+                    if (source_msg->first == source_name && source_msg->second.media->IsRunning() && source_msg->second.media->_play)
+                    {
+                        source_msg->second.media->_play = false;
+                        source_msg->second.media->set_Destroy(true);
+                        source_msg->second.media->set_Run(false);
+#ifdef AV_SYNC_AUDIO_MASTER
+                        source_msg->second.media->video_run = false;
+                        source_msg->second.media->audio_run = false;
+                        source_msg->second.media->audio_recv_run = false;
+                        source_msg->second.media->video_recv_run = false;
+                        if (source_msg->second.media->video_thread.joinable())
+                            source_msg->second.media->video_thread.join();
+                        if (source_msg->second.media->audio_thread.joinable())
+                            source_msg->second.media->audio_thread.join();
+                        if (source_msg->second.media->audio_recv_thread.joinable())
+                            source_msg->second.media->audio_recv_thread.join();
+                        if (source_msg->second.media->video_recv_thread.joinable())
+                            source_msg->second.media->video_recv_thread.join();
+                        source_msg->second.media->_VideoList.clean_enc_fifo();
+                        source_msg->second.media->_AudioList.clean_fifo();
+#endif
+                        void *thread_return;
+                        pthread_join(source_msg->second.media->pid, &thread_return);
+                        int *result = (int *)thread_return;
+                        printf("线程返回: %d\n", *result);
+                    }
+                }
+                rtsp_s.source_mutex.mutex_unlock();
+            }
+            else
+            {
+                printf("NO CLIENTS!\n");
+                rtsp_s.LockFlag = false;
+                rtsp_s.source_mutex.mutex_lock();
+                printf("111\n");
+                for (source_msg = manager.rtsp_source.begin(); source_msg != manager.rtsp_source.end(); source_msg++)
+                {
+                    printf("222\n");
+                    if (source_msg->second.media == nullptr)
+                        continue;
+                    printf("333\n");
+                    source_msg->second.media->_play = false;
+                    printf("444\n");
+                    source_msg->second.media->set_Destroy(true);
+                    printf("555\n");
+                    source_msg->second.media->set_Run(false);
+                    printf("666\n");
+#ifdef AV_SYNC_AUDIO_MASTER
+                    source_msg->second.media->video_run = false;
+                    
+                    source_msg->second.media->audio_run = false;
+                    source_msg->second.media->audio_recv_run = false;
+                    source_msg->second.media->video_recv_run = false;
+                    printf("777\n");
+                    if (source_msg->second.media->video_thread.joinable())
+                        source_msg->second.media->video_thread.join();
+                    printf("888\n");
+                    if (source_msg->second.media->audio_thread.joinable())
+                        source_msg->second.media->audio_thread.join();
+                    printf("999\n");
+                    if (source_msg->second.media->audio_recv_thread.joinable())
+                        source_msg->second.media->audio_recv_thread.join();
+                    printf("101010\n");
+                    if (source_msg->second.media->video_recv_thread.joinable())
+                        source_msg->second.media->video_recv_thread.join();
+                    printf("121212\n");
+#endif
+                    // pthread_cancel(source_map->second.media->pid);
+                    printf("%s stop stream!\n", source_msg->first.c_str());
+                    void *thread_return;
+                    pthread_join(source_msg->second.media->pid, &thread_return);
+                    int *result = (int *)thread_return;
+                    printf("线程返回: %d\n", *result);
+                }
+                rtsp_s.source_mutex.mutex_unlock();
+            }
+
+            break;
+        }
+    }
+
+    return 0;
+}
 
 /*设置客户端的保活机制，心跳包*/
 int RTSP_SESSION::set_keeplive(void)
 {
-//    clientfd = sock.get_tcp_fd();
+    //    clientfd = sock.get_tcp_fd();
 
     int keep_alive = 1;
     int keep_idle = 10;
@@ -139,11 +268,11 @@ void RTSP_SESSION::thread_proc(void)
             {
                 if ((ret = recv_data()) < 0)
                 {
-                    if(ret == -2)
+                    if (ret == -2)
                     {
                         printf("The client is disconnected abnormally. Check the cause!\n");
                         break;
-//                        clear_source(sock.get_tcp_fd());
+                        //                        clear_source(sock.get_tcp_fd());
                     }
                 }
             }
@@ -218,9 +347,9 @@ int RTSP_SESSION::recv_data(void)
     ret = sock.Recv(m_recv_buf, sizeof(m_recv_buf));
     if (ret < 0)
     {
-//        printf("sock fd = %d\n", sock.get_tcp_fd());
+        //        printf("sock fd = %d\n", sock.get_tcp_fd());
         printf("recv client data error\n");
-        if(ret == -2)
+        if (ret == -2)
             return -2;
         else
             return -1;
@@ -422,6 +551,35 @@ void RTSP_SESSION::send_cmd(unsigned char *cmd, int cmd_len)
     return;
 }
 
+void RTSP_SESSION::create_stream_thread(std::string source_name)
+{
+    int i = 0;
+    std::map<std::string, SOURCE>::iterator it;
+
+    for (it = manager.rtsp_source.begin(); it != manager.rtsp_source.end(); it++)
+    {
+        if (it->first == source_name)
+        {
+
+            it->second.media = new MEDIA_STREAM(it->first,
+                                                it->second.read_video_callback,
+                                                it->second.video_opaque,
+                                                it->second.read_audio_callback,
+                                                it->second.audio_opaque,
+                                                it->second.video_fps,
+                                                it->second.audio_sample,
+                                                it->second.video_format,
+                                                it->second.audio_format);
+            it->second.media->start_media();
+            break;
+        }
+    }
+    if (it == manager.rtsp_source.end())
+        printf("create stream thread failed; can not find source!\n");
+
+    return;
+}
+
 void RTSP_SESSION::handle_options(void)
 {
 
@@ -436,6 +594,7 @@ void RTSP_SESSION::handle_options(void)
 
     return;
 }
+
 /*
  *函数描述：处理交互中的DESCRIBE指令
  *
@@ -446,7 +605,7 @@ void RTSP_SESSION::handle_describe()
     int ret = 0;
 
     source_name = strstr(strstr(_rtsp_url, "rtsp://") + strlen("rtsp://"), "/") + 1;
-
+    create_stream_thread(source_name);
     ret = sdp.init_sdp(strstr(strstr(_rtsp_url, "rtsp://") + strlen("rtsp://"), "/") + 1, sock.get_tcp_fd());
     if (ret < 0)
     {
@@ -614,7 +773,7 @@ void RTSP_SESSION::handle_teardown(void)
             "%s 200 OK\r\n"
             "%s%s",
             _rtsp_ver, _CSeq, _session);
-
+    isPlay = 0;
     clear_source(sock.get_tcp_fd());
 
     return;

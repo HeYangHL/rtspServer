@@ -1,47 +1,130 @@
 #include "rtspserver.hpp"
 
-//std::map<int, RTSP_SESSION *> RTSP_S::session_map;
+// std::map<int, RTSP_SESSION *> RTSP_S::session_map;
 std::list<CLI_MSG> RTSP_S::_f_list;
 MUTEX RTSP_S::mutex;
 MUTEX RTSP_S::source_mutex;
-bool RTSP_S::LockFlag=false;
+MUTEX RTSP_S::client_mutex;
+bool RTSP_S::LockFlag = false;
 std::map<std::string, SOURCE> RTSP_S::rtsp_session;
 
 /*
-*函数描述：添加播放源
-*参数：
-*	sourceName：rtsp的播放地址
-*	read_video_stream:读视频流的回调函数
-*	read_audio_stream:读音频流的回调函数
-*	videoFrameRate：视频流帧率
-*	audioFrameRate：音频流采样率
-*	videoCodecType：视频流类型，默认H264
-*	audioCodecType：音频流类型，默认aac
-*返回值：成功 0
-*/
-int RTSP_S::add_media_source(std::string sourceName, int (*read_video_stream)(void *opaque, uint8_t *data, int len, uint64_t *pts), int (*read_audio_stream)(void *opaque, uint8_t *data, int len, uint64_t *pts), uint32_t videoFrameRate, uint32_t audioSampleRate, std::string videoCodecType, std::string audioCodecType)
+ *函数描述：添加播放源
+ *参数：
+ *	sourceName：rtsp的播放地址
+ *	read_video_stream:读视频流的回调函数
+ *	read_audio_stream:读音频流的回调函数
+ *	videoFrameRate：视频流帧率
+ *	audioFrameRate：音频流采样率
+ *	videoCodecType：视频流类型，默认H264
+ *	audioCodecType：音频流类型，默认aac
+ *返回值：成功 0
+ */
+int RTSP_S::add_media_source(std::string sourceName, int (*read_video_stream)(void *opaque, uint8_t *data, bool keyFrame, uint64_t *pts), void *video_opaque, int (*read_audio_stream)(void *opaque, uint8_t *data, int len, uint64_t *pts), void *audio_opaque, uint32_t videoFrameRate, uint32_t audioSampleRate, std::string videoCodecType, std::string audioCodecType)
 {
-	SOURCE new_session;
+	// SOURCE new_session;
 
-	new_session.read_video_callback = read_video_stream;
-	new_session.read_audio_callback = read_audio_stream;
-	new_session.video_fps = videoFrameRate;
-	new_session.audio_sample = audioSampleRate;
-	new_session.video_format = videoCodecType;
-	new_session.audio_format = audioCodecType;
+	// new_session.read_video_callback = read_video_stream;
+	// new_session.read_audio_callback = read_audio_stream;
+	// new_session.video_fps = videoFrameRate;
+	// new_session.audio_sample = audioSampleRate;
+	// new_session.video_format = videoCodecType;
+	// new_session.audio_format = audioCodecType;
 
-	rtsp_session.insert(std::map<std::string, SOURCE>::value_type(sourceName, new_session));
+	// rtsp_session.insert(std::map<std::string, SOURCE>::value_type(sourceName, new_session));
+
+	manager.Add_Source(sourceName, read_video_stream, video_opaque, read_audio_stream, audio_opaque, videoFrameRate, audioSampleRate, videoCodecType, audioCodecType);
 
 	return 0;
 }
 
 /*
-*函数描述：删除数据源
-*参数：
-*	sourceName：要删除源的路径名
-*返回值：成功 0， 失败 -1
-*/
+ *函数描述：删除数据源
+ *参数：
+ *	sourceName：要删除源的路径名
+ *返回值：成功 0， 失败 -1
+ */
 
+int RTSP_S::del_media_source(std::string sourceName)
+{
+	std::string source_name;
+	SOURCE *source_msg;
+
+	std::map<std::string, SOURCE>::iterator source_map;
+	std::list<CLI_MSG>::iterator client_msg_list;
+
+	printf("source name : %s\n", sourceName.c_str());
+	source_mutex.mutex_lock();
+	for (source_map = manager.rtsp_source.begin(); source_map != manager.rtsp_source.end(); source_map++)
+	{
+		if (source_map->first == sourceName)
+		{
+			printf("=====>name : %s, pid = %08x\n", sourceName.c_str(), source_map->second.media->pid);
+			source_map->second.media->_play = false;
+
+			if (source_map->second.media->IsRunning())
+			{
+				source_map->second.media->_play = false;
+				source_map->second.media->set_Destroy(true);
+				source_map->second.media->set_Run(false);
+#ifdef AV_SYNC_AUDIO_MASTER
+				source_map->second.media->video_run = false;
+				source_map->second.media->audio_run = false;
+				source_map->second.media->audio_recv_run = false;
+				source_map->second.media->video_recv_run = false;
+				if (source_map->second.media->video_thread.joinable())
+					source_map->second.media->video_thread.join();
+				if (source_map->second.media->audio_thread.joinable())
+					source_map->second.media->audio_thread.join();
+				if (source_map->second.media->audio_recv_thread.joinable())
+					source_map->second.media->audio_recv_thread.join();
+				if (source_map->second.media->video_recv_thread.joinable())
+					source_map->second.media->video_recv_thread.join();
+				source_map->second.media->_VideoList.clean_enc_fifo();
+				source_map->second.media->_AudioList.clean_fifo();
+#endif
+				// pthread_cancel(source_map->second.media->pid);
+				printf("%s stop stream!\n", sourceName.c_str());
+				void *thread_return;
+				pthread_join(source_map->second.media->pid, &thread_return);
+				int *result = (int *)thread_return;
+				printf("线程返回: %d\n", *result);
+				if(source_map->second.media != nullptr)
+				{
+					delete [] source_map->second.media;
+					source_map->second.media = nullptr;
+				}
+			}
+			manager.rtsp_source.erase(source_map);
+			break;
+		}
+	}
+
+	source_mutex.mutex_unlock();
+#if 1
+	client_mutex.mutex_lock();
+
+	for (client_msg_list = _f_list.begin(); client_msg_list != _f_list.end(); )
+	{
+		if (client_msg_list->session_map->get_source_name() == sourceName)
+		{
+			close(client_msg_list->cli_tcp_fd);
+			if (client_msg_list->session_map != NULL)
+			{
+				delete client_msg_list->session_map;
+				client_msg_list->session_map = NULL;
+			}
+			client_msg_list = _f_list.erase(client_msg_list);
+			// client_msg_list--;
+		}
+	}
+	client_mutex.mutex_unlock();
+#endif
+
+	return 0;
+}
+
+#if 0
 int RTSP_S::del_media_source(std::string sourceName)
 {
 	std::string source_name;
@@ -94,13 +177,13 @@ int RTSP_S::del_media_source(std::string sourceName)
     return 0;
 
 }
-
+#endif
 
 /*
-*函数描述：停止rtsp服务器
-*返回值：成功 0 失败 -1
-*
-*/
+ *函数描述：停止rtsp服务器
+ *返回值：成功 0 失败 -1
+ *
+ */
 
 int RTSP_S::stop()
 {
@@ -110,51 +193,107 @@ int RTSP_S::stop()
 	std::list<CLI_MSG>::iterator client_msg_list;
 	std::map<std::string, SOURCE>::iterator source_map;
 
-	for(source_map = rtsp_session.begin(); source_map != rtsp_session.end(); source_map++)
-                source_map->second.s_mutex.mutex_lock();
-
-	for(client_msg_list = _f_list.begin(); client_msg_list != _f_list.end(); client_msg_list++)
+	for (client_msg_list = _f_list.begin(); client_msg_list != _f_list.end(); client_msg_list++)
 	{
-		//关闭套接字
-		close(client_msg_list->cli_tcp_fd);		
-		//释放会话空间
-		if(client_msg_list->session_map)
+		// 关闭套接字
+		close(client_msg_list->cli_tcp_fd);
+		// 释放会话空间
+		if (client_msg_list->session_map)
 		{
 			delete client_msg_list->session_map;
 			client_msg_list->session_map = NULL;
 		}
 		source_mutex.mutex_lock();
-		//关闭线程
-		for(source_map = rtsp_session.begin(); source_map != rtsp_session.end(); source_map++)
+		// 关闭线程
+		for (source_map = manager.rtsp_source.begin(); source_map != manager.rtsp_source.end(); source_map++)
+		{
+			source_map->second.media->_play = false;
+			source_map->second.media->set_Destroy(true);
+			source_map->second.media->set_Run(false);
+#ifdef AV_SYNC_AUDIO_MASTER
+			source_map->second.media->video_run = false;
+			source_map->second.media->audio_run = false;
+			if (source_map->second.media->video_thread.joinable())
+				source_map->second.media->video_thread.join();
+			if (source_map->second.media->audio_thread.joinable())
+				source_map->second.media->audio_thread.join();
+#endif
+			// pthread_cancel(source_map->second.media->pid);
+			//暂时注释，在使用时报错
+			// printf("%s stop stream!\n", source_map->first.c_str());
+			// void *thread_return;
+			// pthread_join(source_map->second.media->pid, &thread_return);
+			// int *result = (int *)thread_return;
+			// printf("线程返回: %d\n", *result);
+		}
+		// 清除资源列表
+		for (source_map = manager.rtsp_source.begin(); source_map != manager.rtsp_source.end(); source_map++)
+		{
+			manager.rtsp_source.erase(source_map);
+			source_map--;
+		}
+		source_mutex.mutex_unlock();
+		// 清除会话列表
+		client_mutex.mutex_lock();
+		_f_list.erase(client_msg_list);
+		client_msg_list--;
+		client_mutex.mutex_unlock();
+	}
+}
+
+#if 0
+int RTSP_S::stop()
+{
+	std::string source_name;
+	SOURCE *source_msg = NULL;
+
+	std::list<CLI_MSG>::iterator client_msg_list;
+	std::map<std::string, SOURCE>::iterator source_map;
+
+	for (source_map = rtsp_session.begin(); source_map != rtsp_session.end(); source_map++)
+		source_map->second.s_mutex.mutex_lock();
+
+	for (client_msg_list = _f_list.begin(); client_msg_list != _f_list.end(); client_msg_list++)
+	{
+		// 关闭套接字
+		close(client_msg_list->cli_tcp_fd);
+		// 释放会话空间
+		if (client_msg_list->session_map)
+		{
+			delete client_msg_list->session_map;
+			client_msg_list->session_map = NULL;
+		}
+		source_mutex.mutex_lock();
+		// 关闭线程
+		for (source_map = rtsp_session.begin(); source_map != rtsp_session.end(); source_map++)
 			pthread_cancel(source_map->second.pid);
-		//清除资源列表
-		for(source_map = rtsp_session.begin(); source_map != rtsp_session.end(); source_map++)
+		// 清除资源列表
+		for (source_map = rtsp_session.begin(); source_map != rtsp_session.end(); source_map++)
 		{
 			rtsp_session.erase(source_map);
 			source_map--;
 		}
 		source_mutex.mutex_unlock();
-		//清除会话列表
+		// 清除会话列表
 		_f_list.erase(client_msg_list);
 		client_msg_list--;
 	}
 
-	for(source_map = rtsp_session.begin(); source_map != rtsp_session.end(); source_map++)
-                source_map->second.s_mutex.mutex_unlock();
+	for (source_map = rtsp_session.begin(); source_map != rtsp_session.end(); source_map++)
+		source_map->second.s_mutex.mutex_unlock();
 }
-
-
+#endif
 /*
-*函数描述：添加客户端到链表
-*参数：
-*	tcpfd：客户端的tcp套接字
-*	cli_ip：客户端ip
-*	rtsp_session:客户端对应的会话对象
-*返回值：void
-*/
+ *函数描述：添加客户端到链表
+ *参数：
+ *	tcpfd：客户端的tcp套接字
+ *	cli_ip：客户端ip
+ *	rtsp_session:客户端对应的会话对象
+ *返回值：void
+ */
 void RTSP_S::add_list(int tcpfd, uint8_t *cli_ip, RTSP_SESSION *rtsp_session)
 {
-	mutex.mutex_lock();
+
 	CLI_MSG cli_msg;
 
 	cli_msg.cli_tcp_fd = tcpfd;
@@ -162,33 +301,33 @@ void RTSP_S::add_list(int tcpfd, uint8_t *cli_ip, RTSP_SESSION *rtsp_session)
 	cli_msg.session_map = rtsp_session;
 	cli_msg.server_rtp_fd = serverRtpSockfd;
 	cli_msg.server_rtcp_fd = serverRtcpSockfd;
-
+	client_mutex.mutex_lock();
 	_f_list.push_back(cli_msg);
-	mutex.mutex_unlock();
-
-	return ;
-}
-
-/*
-*函数描述：创建媒体流发送线程
-*参数：void
-*返回值：void
-*
-*/
-
-void RTSP_S::creat_media_pthread(void)
-{
-	media_stream.start_media();
+	client_mutex.mutex_unlock();
 
 	return;
 }
 
 /*
-*函数描述：创建客户端异常检测线程
-*参数：void
-*返回值：void
-*
-*/
+ *函数描述：创建媒体流发送线程
+ *参数：void
+ *返回值：void
+ *
+ */
+
+// void RTSP_S::creat_media_pthread(void)
+// {
+// 	media_stream.start_media();
+
+// 	return;
+// }
+
+/*
+ *函数描述：创建客户端异常检测线程
+ *参数：void
+ *返回值：void
+ *
+ */
 void RTSP_S::creat_client_list_pthread(void)
 {
 	cli_list.start_client_listen();
@@ -196,11 +335,11 @@ void RTSP_S::creat_client_list_pthread(void)
 }
 
 /*
-*函数描述：创建tcp套接字
-*参数：void
-*返回值：void
-*
-*/
+ *函数描述：创建tcp套接字
+ *参数：void
+ *返回值：void
+ *
+ */
 void RTSP_S::creat_sock(void)
 {
 	open_sock();
@@ -215,18 +354,18 @@ void RTSP_S::creat_sock(void)
 	bindAudioRtpSocketAddr();
 	bindAudioRtcpSocketAddr();
 	listen_sock();
-//	creat_media_pthread();
-//	creat_client_list_pthread();
+	//	creat_media_pthread();
+	//	creat_client_list_pthread();
 
 	return;
 }
 
 /*
-*函数描述：开始rtsp服务器
-*参数：void
-*返回值：void
-*
-*/
+ *函数描述：开始rtsp服务器
+ *参数：void
+ *返回值：void
+ *
+ */
 void RTSP_S::start(void)
 {
 	int ret = 0;
@@ -237,14 +376,14 @@ void RTSP_S::start(void)
 }
 
 /*
-*函数描述：将创建客户端会话并且将客户端添加到链表
-*参数：
-*	c_fd：客户端文件描述符
-*	cli_ip：客户端ip
-*返回值：void
-*
-*
-*/
+ *函数描述：将创建客户端会话并且将客户端添加到链表
+ *参数：
+ *	c_fd：客户端文件描述符
+ *	cli_ip：客户端ip
+ *返回值：void
+ *
+ *
+ */
 
 void RTSP_S::accept_sock(int c_fd, uint8_t *cli_ip)
 {
@@ -256,9 +395,7 @@ void RTSP_S::accept_sock(int c_fd, uint8_t *cli_ip)
 	add_list(c_fd, cli_ip, rtsp_session);
 	printf("end add list!\n");
 
-
 	rtsp_session->start(c_fd, cli_ip);
 
-
-	return ;
+	return;
 }

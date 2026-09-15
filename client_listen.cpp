@@ -40,8 +40,10 @@ void CLI_LIST::thread_proc(void)
             }
         }
         else{
+            printf("=====>1 lock!\n");
             rtsp_s.source_mutex.mutex_lock();
             rtsp_s.source_mutex.mutex_cond_wait();
+            printf("=====>1 unlock!\n");
             rtsp_s.source_mutex.mutex_unlock();
         }
     }
