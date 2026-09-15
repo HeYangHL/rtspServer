@@ -342,20 +342,6 @@ semaphore.h
 sys/time.h
 -
 
-/home/ebaina/rtsp/rtspServer/main.cpp
-iostream
--
-stdio.h
--
-fstream
--
-Def.h
-/home/ebaina/rtsp/rtspServer/Def.h
-ts_decode.hpp
-/home/ebaina/rtsp/rtspServer/ts_decode.hpp
-rtspserver.hpp
-/home/ebaina/rtsp/rtspServer/rtspserver.hpp
-
 /home/ebaina/rtsp/rtspServer/mutex.cpp
 mutex.hpp
 /home/ebaina/rtsp/rtspServer/mutex.hpp
